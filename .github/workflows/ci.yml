@@ -31,8 +31,34 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # A plain postgres/postgis image is NOT enough here: the schema and
+      # RLS policies depend on the `auth` schema (auth.users, auth.uid()),
+      # and on the anon/authenticated/service_role roles — none of which
+      # exist outside a real Supabase Postgres bootstrap. `supabase start`
+      # (the CLI is already a devDependency) brings up the same local
+      # stack every developer already runs, with PostGIS and the auth
+      # schema/roles included, and applies infra/migrations automatically
+      # (supabase/migrations is a symlink to it) before the DB is reported
+      # ready — so migrations are applied before the Test step runs below,
+      # with no separate apply step needed.
+      - name: Start local Supabase (real Postgres + PostGIS + auth schema/roles; migrations applied automatically)
+        env:
+          OPENAI_API_KEY: ''
+          SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN: ''
+          SUPABASE_AUTH_EXTERNAL_APPLE_SECRET: ''
+        run: pnpm exec supabase start
+
       - name: Test
+        env:
+          # Matches supabase/config.toml's [db] port (54322) and the CLI's
+          # fixed local default credentials — same URL a developer running
+          # `supabase start` on their own machine points these tests at.
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
         run: pnpm test
+
+      - name: Stop local Supabase
+        if: always()
+        run: pnpm exec supabase stop
 
   rls-guard:
     name: RLS policy guard
