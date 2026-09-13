@@ -19,6 +19,13 @@
  * Requires a local Postgres with 0001_foundation.sql + 0002_handoff_codes.sql
  * applied. Skips cleanly if DATABASE_URL is not set, same convention as the
  * rest of this suite.
+ *
+ * Run against a real Supabase project instead of the local/CI stack, this
+ * file's fixture rows CANNOT be fully cleaned up afterward: order_events'
+ * append-only trigger correctly refuses to delete the fixture events, and
+ * ON DELETE RESTRICT then pins the fixture orders (and transitively their
+ * zone and auth.users rows) in place. That's the same trigger this whole
+ * file exists to trust — expected behaviour, not a bug in the test.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool, Client } from 'pg';
