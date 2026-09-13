@@ -31,8 +31,43 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # supabase/migrations is a LOCAL, gitignored symlink to infra/migrations
+      # (see supabase/.gitignore's own comment) — it exists only on a
+      # developer's machine and is never checked out by CI, so it has to be
+      # recreated here or `supabase start` finds an empty migrations
+      # directory and applies nothing (confirmed by an earlier version of
+      # this workflow failing with "relation public.orders does not exist").
+      - name: Recreate the supabase/migrations link to the tracked source of truth
+        run: ln -sfn ../infra/migrations supabase/migrations
+
+      # A plain postgres/postgis image is NOT enough here: the schema and
+      # RLS policies depend on the `auth` schema (auth.users, auth.uid()),
+      # and on the anon/authenticated/service_role roles — none of which
+      # exist outside a real Supabase Postgres bootstrap. `supabase start`
+      # (the CLI is already a devDependency) brings up the same local
+      # stack every developer already runs, with PostGIS and the auth
+      # schema/roles included, and applies infra/migrations automatically
+      # (via the symlink just recreated above) before the DB is reported
+      # ready — so migrations are applied before the Test step runs below,
+      # with no separate apply step needed.
+      - name: Start local Supabase (real Postgres + PostGIS + auth schema/roles; migrations applied automatically)
+        env:
+          OPENAI_API_KEY: ''
+          SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN: ''
+          SUPABASE_AUTH_EXTERNAL_APPLE_SECRET: ''
+        run: pnpm exec supabase start
+
       - name: Test
+        env:
+          # Matches supabase/config.toml's [db] port (54322) and the CLI's
+          # fixed local default credentials — same URL a developer running
+          # `supabase start` on their own machine points these tests at.
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
         run: pnpm test
+
+      - name: Stop local Supabase
+        if: always()
+        run: pnpm exec supabase stop
 
   rls-guard:
     name: RLS policy guard
